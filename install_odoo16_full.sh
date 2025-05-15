@@ -50,7 +50,15 @@ if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
 fi
 source "$VENV_DIR/bin/activate"
+
+# Aggiungi pg_config nel PATH
+export PATH="$PG_DIR/bin:$PATH"
+
 pip install --upgrade pip setuptools wheel
+
+# Usa psycopg2-binary modificando requirements temporaneamente
+sed -i 's/^psycopg2==2.8.6/psycopg2-binary==2.8.6/' "$ODOO_DIR/requirements.txt"
+
 pip install -r "$ODOO_DIR/requirements.txt"
 
 # === PostgreSQL installazione da sorgente locale ===
