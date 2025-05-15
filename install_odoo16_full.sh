@@ -5,12 +5,12 @@ set -e
 ODOO_BRANCH="16.0"
 ODOO_DIR="$HOME/odoo"
 ODOO_CONF="$HOME/.odoo/odoo.conf"
-VENV_DIR="$HOME/odoo16env"
 PG_DIR="$HOME/.pgsql"
 PG_PORT=5434
 ODOO_PORT=8069
 
-# Inserisci qui l’URL del tuo repo pubblico (che contiene get-pip.py e postgresql-15.6.tar.gz)
+PYTHON_BIN="/usr/bin/python3.11"
+PYTHON_LIBS="~/blendx-leonardo-notify/py17/lib/python3.11/site-packages"
 REPO_URL="https://github.com/hurrinico/apt.git"
 REPO_DIR="$HOME/install_files"
 
@@ -27,14 +27,6 @@ else
     git pull
 fi
 
-# === pip install da file locale ===
-echo ">>> Controllo pip3"
-if ! command -v pip3 >/dev/null 2>&1; then
-    echo ">>> pip3 non trovato. Installo da file locale..."
-    python3 "$REPO_DIR/get-pip.py" --user
-    export PATH="$HOME/.local/bin:$PATH"
-fi
-
 # === Clona Odoo ===
 echo ">>> Clonazione/aggiornamento Odoo $ODOO_BRANCH"
 if [ ! -d "$ODOO_DIR" ]; then
@@ -43,23 +35,6 @@ else
     cd "$ODOO_DIR"
     git pull
 fi
-
-# === Virtualenv e dipendenze ===
-echo ">>> Setup virtualenv Python"
-if [ ! -d "$VENV_DIR" ]; then
-    python3 -m venv "$VENV_DIR"
-fi
-source "$VENV_DIR/bin/activate"
-
-# Aggiungi pg_config nel PATH
-export PATH="$PG_DIR/bin:$PATH"
-
-pip install --upgrade pip setuptools wheel
-
-# Usa psycopg2-binary modificando requirements temporaneamente
-sed -i 's/^psycopg2==2.8.6/psycopg2-binary==2.8.6/' "$ODOO_DIR/requirements.txt"
-
-pip install -r "$ODOO_DIR/requirements.txt"
 
 # === PostgreSQL installazione da sorgente locale ===
 cd "$PG_DIR"
@@ -93,20 +68,29 @@ logfile = ~/.odoo/odoo.log
 xmlrpc_port = $ODOO_PORT
 EOF
 
-echo ">>> Setup systemd user service"
+# === Script di avvio per includere PYTHONPATH ===
+cat > "$ODOO_DIR/start.sh" <<EOF
+#!/bin/bash
+export PYTHONPATH=$PYTHON_LIBS:\$PYTHONPATH
+exec $PYTHON_BIN $ODOO_DIR/odoo-bin -c $ODOO_CONF "\$@"
+EOF
+
+chmod +x "$ODOO_DIR/start.sh"
+
+# === Setup systemd user service ===
 mkdir -p ~/.config/systemd/user
 
 cat > ~/.config/systemd/user/odoo.service <<EOF
 [Unit]
-Description=Odoo 16 Service
+Description=Odoo 16 Service (no venv)
 After=network.target
 
 [Service]
-ExecStart=$VENV_DIR/bin/python3 $ODOO_DIR/odoo-bin -c $ODOO_CONF
+ExecStart=$ODOO_DIR/start.sh
 WorkingDirectory=$ODOO_DIR
 Restart=always
 User=$USER
-Environment=PATH=$VENV_DIR/bin:$PATH
+Environment=PYTHONPATH=$PYTHON_LIBS
 
 [Install]
 WantedBy=default.target
@@ -118,4 +102,3 @@ systemctl --user enable --now odoo.service
 
 echo "✅ Installazione completata. Odoo è in esecuzione!"
 echo "Usa 'journalctl --user -u odoo -f' per vedere i log."
-
