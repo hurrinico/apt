@@ -11,7 +11,7 @@ PG_PORT=5434
 ODOO_PORT=8069
 
 # Inserisci qui l’URL del tuo repo pubblico (che contiene get-pip.py e postgresql-15.6.tar.gz)
-REPO_URL="https://github.com/tuoaccount/tuorepo.git"
+REPO_URL="https://github.com/hurrinico/apt.git"
 REPO_DIR="$HOME/install_files"
 
 mkdir -p ~/.odoo
