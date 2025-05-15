@@ -10,45 +10,60 @@ PG_DIR="$HOME/.pgsql"
 PG_PORT=5434
 ODOO_PORT=8069
 
+# Inserisci qui l’URL del tuo repo pubblico (che contiene get-pip.py e postgresql-15.6.tar.gz)
+REPO_URL="https://github.com/tuoaccount/tuorepo.git"
+REPO_DIR="$HOME/install_files"
+
 mkdir -p ~/.odoo
 mkdir -p "$PG_DIR"
 
-echo ">>> [1/6] Controllo/Installazione pip"
+# === CLONE / PULL REPO FILES ===
+if [ ! -d "$REPO_DIR" ]; then
+    echo ">>> Clono repo con file di installazione..."
+    git clone "$REPO_URL" "$REPO_DIR"
+else
+    echo ">>> Aggiorno repo locale..."
+    cd "$REPO_DIR"
+    git pull
+fi
+
+# === pip install da file locale ===
+echo ">>> Controllo pip3"
 if ! command -v pip3 >/dev/null 2>&1; then
-    echo ">>> pip3 non trovato. Installazione..."
-    curl -sS https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-    python3 get-pip.py --user
+    echo ">>> pip3 non trovato. Installo da file locale..."
+    python3 "$REPO_DIR/get-pip.py" --user
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-echo ">>> [2/6] Clonazione Odoo $ODOO_BRANCH"
+# === Clona Odoo ===
+echo ">>> Clonazione/aggiornamento Odoo $ODOO_BRANCH"
 if [ ! -d "$ODOO_DIR" ]; then
     git clone --depth 1 --branch $ODOO_BRANCH https://github.com/odoo/odoo.git "$ODOO_DIR"
+else
+    cd "$ODOO_DIR"
+    git pull
 fi
 
-echo ">>> [3/6] Virtualenv Python"
+# === Virtualenv e dipendenze ===
+echo ">>> Setup virtualenv Python"
 if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
 fi
 source "$VENV_DIR/bin/activate"
 pip install --upgrade pip setuptools wheel
-
-echo ">>> [4/6] Installazione dipendenze Odoo"
 pip install -r "$ODOO_DIR/requirements.txt"
 
-echo ">>> [5/6] Installazione PostgreSQL local (no root)"
+# === PostgreSQL installazione da sorgente locale ===
 cd "$PG_DIR"
 if [ ! -d "$PG_DIR/bin" ]; then
-    echo ">>> Scarico PostgreSQL 15..."
-    curl -LO https://ftp.postgresql.org/pub/source/v15.6/postgresql-15.6.tar.gz
-    tar -xf postgresql-15.6.tar.gz
+    echo ">>> Installazione PostgreSQL da file locale..."
+    tar -xf "$REPO_DIR/postgresql-15.6.tar.gz"
     cd postgresql-15.6
     ./configure --prefix="$PG_DIR"
     make -j$(nproc)
     make install
     cd ..
     "$PG_DIR/bin/initdb" -D "$PG_DIR/data"
-    echo ">>> PostgreSQL inizializzato in $PG_DIR/data"
 fi
 
 echo ">>> Avvio PostgreSQL user-mode (porta $PG_PORT)..."
@@ -57,7 +72,7 @@ sleep 3
 "$PG_DIR/bin/createuser" -p $PG_PORT -s $(whoami) || true
 "$PG_DIR/bin/createdb" -p $PG_PORT odoo16 || true
 
-echo ">>> [6/6] Generazione odoo.conf"
+# === Configurazione odoo.conf ===
 cat > "$ODOO_CONF" <<EOF
 [options]
 addons_path = $ODOO_DIR/addons
@@ -70,11 +85,7 @@ logfile = ~/.odoo/odoo.log
 xmlrpc_port = $ODOO_PORT
 EOF
 
-echo ">>> Installazione completata!"
-echo "Puoi avviare Odoo con:"
-echo "source $VENV_DIR/bin/activate && $ODOO_DIR/odoo-bin -c $ODOO_CONF"
-
-echo ">>> Copio file systemd per esecuzione automatica (user service)..."
+echo ">>> Setup systemd user service"
 mkdir -p ~/.config/systemd/user
 
 cat > ~/.config/systemd/user/odoo.service <<EOF
@@ -93,10 +104,10 @@ Environment=PATH=$VENV_DIR/bin:$PATH
 WantedBy=default.target
 EOF
 
-echo ">>> Abilitazione systemd --user (avvio automatico Odoo)"
 systemctl --user daemon-reexec || true
 systemctl --user daemon-reload
 systemctl --user enable --now odoo.service
 
-echo "✅ Odoo 16 è in esecuzione come servizio utente!"
-echo "🔍 Log: journalctl --user -u odoo -f"
+echo "✅ Installazione completata. Odoo è in esecuzione!"
+echo "Usa 'journalctl --user -u odoo -f' per vedere i log."
+
